@@ -1,0 +1,22 @@
+#!/bin/bash
+
+dir_list=$(find . -maxdepth 1 -mindepth 1 -type d | sort )
+
+
+if [ $# -le 0 ];then
+	dest=st_fs
+#	mkdir -p st_fs
+	echo out destination is st_fs
+else
+	dest=$1
+#	mkdir -p $1
+	echo out destination is $1
+fi
+
+for dir in $dir_list;do
+	if [ -d $dir/*/image ];then 
+		S=$dest/$(basename "$dir")
+		mkdir -p $S
+		cp -dpRf $dir/*/image/* $S
+	fi
+done

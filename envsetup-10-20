@@ -1,0 +1,214 @@
+#! /bin/bash
+
+cat <<EOF
+
+|--                         --- DEVELOPMENT  ENVIRONMENT SETUP ---              *       
+*
+*                      ATTENTION !!! YOU MUST ENTER YOUR PROJECT FIRST!  
+*
+*  Invoke ". build/envsetup.sh" from your shell to add the following functions
+|--       
+*  cfg_board:    Choose a board on which you want to run.
+*  gettop: 		 Find the top directory.
+*  findtargets:  Find the targets below the specified directory.e.g. 'showtarget <directory>'
+*  showtargets:  Show the targets below the specified directory and queued by '-q' opition. 
+*                 e.g. 'showtargets -d <directory> -q <num>' 
+*  src_env:      Source the env to find the arm tool chain.
+*  mm:           Builds all of the modules in the current directory, as well as their dependencies.
+|--
+EOF
+
+BOARD=
+TOP_DIR=
+
+function _gettop {
+    local TOPFILE='build/core/configure.mk'
+
+    if [ -n "$TOP_DIR" -a -f "$TOP_DIR/$TOPFILE" ] ; then
+        # The following circumlocution ensures we remove symlinks from TOP.
+        (cd $TOP_DIR; PWD= /bin/pwd)
+    else
+        if [ -f $TOPFILE ] ; then
+            # The following circumlocution (repeated below as well) ensures
+            # that we record the true directory name and not one that is
+            # faked up with symlink names.
+            PWD= /bin/pwd
+        else
+            local HERE=$PWD
+            local T=
+            while [ \( ! \( -f $TOPFILE \) \) -a \( $PWD != "/" \) ]; do
+                \cd ..
+                T=`PWD= /bin/pwd -P`
+            done
+            \cd $HERE
+            if [ -f "$T/$TOPFILE" ]; then
+                echo $T
+            fi
+        fi
+    fi
+}
+
+function cfg_board {
+    local i=0
+    local BOARD_LIST=
+	local BOARD_DIR=$TOP_DIR/boards 
+ 	BOARD_LIST=$(ls -CF $BOARD_DIR | sed  s/AmbaConfig// | sed 's/\///g')
+
+	echo ' The following boards were found. Enter a mumber to select one from them.'
+	for var in $BOARD_LIST
+    do
+        i=$[ $i+1 ]
+        echo "   $i. $var"
+    done
+    echo -n " Waitting for entering..."
+    read ANSWER
+
+    if [ -z $ANSWER ];then
+        ANSWER=1
+        echo -n ' You have chosen the default board: '
+    else
+    	while [ $ANSWER -lt 1 ] || [ $ANSWER -gt $i ] 
+    	do
+        	echo -n ' Invalid value, please enter again...'
+       		read ANSWER
+    	done
+		echo -n ' You have chosen: '
+	fi
+	i=0
+	for var in $BOARD_LIST
+	do 
+		i=$[$i + 1 ]
+		if [ $i -eq $ANSWER ];then
+			BOARD=$var
+		fi
+	done	    
+    echo $BOARD|grep $BOARD
+}
+
+
+function findtargets {
+    local TARGETS=""
+    local HERE=$(pwd)
+	local POS=
+
+	if [ -z $1 ];then
+        POS=$HERE
+    else
+        POS=$1
+    fi
+
+    for vars in $(find $POS  -name make.inc)
+    do
+        for element in $(grep ^LOCAL_TARGET $vars )
+        do
+            TARGETS="$TARGETS  $(echo $element | sed s/^LOCAL_TARGET// |sed s/:=// | sed /^$/d)"
+        done
+    done
+    echo $TARGETS
+}
+
+function showtargets {
+	local TARGETS=""
+    local HERE=$(pwd)
+	local i=0
+	local que=2
+	local dir=$HERE
+
+	while [ -n "$1" ]
+	do 	
+		case "$1" in 
+			-q) if [ -z "$2" ];then
+					echo "Warning: Option '-q' should follow by a number. [0~9]"
+					return
+				else
+					que="$2"
+					fi
+					shift ;;
+			-d) if [ -z "$2" ];then
+					echo "Warning: Option '-d' should follow by a directory."
+					return
+				else
+					dir="$2"
+					fi
+					shift ;;
+		esac
+		shift
+	done
+	for var in $(findtargets $dir)
+	do
+		i=$[$i+1]
+		if [ $i -eq $que ]
+		then
+			label="\n"
+			i=0
+		else
+			label=""
+		fi
+		printf "%-25s$label" $var
+	done
+
+	echo '           '
+}
+
+function src_env {	
+	
+		source $TOP_DIR/build/env/aarch64-linaro-gcc.env	
+}
+
+function mm {
+	local HERE=$(pwd)
+	local TARGETS=
+    local tmp=
+
+	if [ -z "$TOP_DIR" ]
+	then
+		echo 'Please check if you have source the sdk correctly...'
+		return 1
+	fi
+		
+	if [ -f Makefile ] && [[ $HERE == */s5l_linux_sdk/ambarella/boards/*  ]]  
+	then
+		echo -n "The while progect will be built. Press 'Y' to continue and cancle with 'N'. "
+		read ANSWER
+		case $ANSWER in
+			[Nn]*)
+		    	return
+			;;
+			*)
+				make
+			;;
+		esac
+	else 
+	
+		TARGETS=$(findtargets)
+		(echo  $TARGETS | grep [[:alpha:]] > /dev/null)
+	    if [ $? -eq 0 ]
+		then
+			echo Attention: The following targets will be built: $TARGETS
+			echo -n "Continue ???  (Y/N)  ..."
+	        read ANSWER
+    	    case $ANSWER in
+              [Nn]*)
+                return
+              ;;
+              *)
+                  make -k -C $TOP_DIR/boards/$BOARD/ $TARGETS
+              ;;
+        	esac
+		else
+			echo 'No target have been found under current directory, please change a directory for another try!'	
+			return
+		fi
+	fi
+}
+
+TOP_DIR=$(_gettop)
+if [ -z "$TOP_DIR" ];then
+	echo "*  WARNING !!!  Can't find top directory. Please enter your project first!"
+	echo "*  Mission fail! Try again!"
+else
+	cfg_board
+	src_env
+fi
+
+
